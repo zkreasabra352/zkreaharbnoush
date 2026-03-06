@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>دفعات الزبون | النظام </title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+</head>
+
+<body>
+    <div id="paymentSelectionBar" class="selection-bar">
+        <div class="selection-info">
+            تم تحديد: <span id="selectedPaymentsCount">0</span>
+        </div>
+        <div class="selection-actions">
+            <button class="btn btn-edit-alt" onclick="editSelectedPayments()">
+                <i class="fas fa-pen"></i> تعديل
+            </button>
+            <button class="btn btn-danger-alt" onclick="deleteSelectedPayments()">
+                <i class="fas fa-trash"></i> حذف المحدد
+            </button>
+            <button class="btn btn-secondary-alt" onclick="clearPaymentsSelection()">
+                إلغاء
+            </button>
+        </div>
+    </div>
+    <div class="app-wrapper">
+        <aside class="sidebar">
+            <div class="logo">
+                <i class="fas fa-wallet"></i>
+                <span>المالية</span>
+            </div>
+            <nav>
+                <a href="index.html"><i class="fas fa-users"></i> الزبائن</a>
+                <a href="#" class="active"><i class="fas fa-file-invoice-dollar"></i> الدفعات</a>
+                <a href="index.html"><i class="fas fa-arrow-right"></i> العودة للرئيسية</a>
+                <a href="logs.html"><i class="fas fa-list"></i> السجلات</a>
+            </nav>
+        </aside>
+
+        <main class="main-content">
+            <header class="top-bar">
+                <div class="user-info">سجل دفعات الزبون</div>
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <button id="addPaymentBtn" class="btn btn-primary">
+                        <i class="fas fa-plus"></i> إضافة دفعة جديدة
+                    </button>
+                    <button onclick="printCustomerInvoice()" class="btn btn-secondary">
+                        <i class="fas fa-print"></i> طباعة الفاتورة
+                    </button>
+                    <input type="date" id="paymentDateFilter" onchange="filterPaymentsByDate()"
+                        style="padding:5px 10px; margin-left:10px; width:150px;">
+                    <span id="paymentsCount" style="font-weight:700;">عدد الدفعات: 0</span>
+                </div>
+            </header>
+
+            <div class="container">
+                <div class="card table-card">
+                    <div class="table-responsive">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th style="width:50px;">
+                                        <input type="checkbox" id="selectAllPayments"
+                                            onclick="toggleSelectAllPayments()">
+                                    </th>
+                                    <th>المبلغ</th>
+                                    <th>الباقي</th>
+                                    <th>السرعة</th>
+                                    <th>ملاحظة</th>
+                                    <th>تاريخ الدفعة</th>
+                                </tr>
+                            </thead>
+                            <tbody id="paymentsTable">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div id="paymentModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="paymentModalTitle">إضافة دفعة</h2>
+                <span class="modal-close" onclick="closePaymentModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label><i class="fas fa-money-bill-wave"></i> المبلغ</label>
+                    <input type="text" id="paymentAmount" placeholder="مثلاً: 10$ أو 150">
+                </div>
+                <div class="form-group">
+                    <label><i class="fas fa-hand-holding-dollar"></i> المبلغ المتبقي</label>
+                    <input type="text" id="paymentRemaining" placeholder="مثلاً: 10$ أو 150">
+                </div>
+                <div class="form-group">
+                    <label><i class="fas fa-tachometer-alt"></i> السرعة المطلوبة</label>
+                    <input type="text" id="paymentSpeed" placeholder="مثلاً: 50 Mbps">
+                </div>
+                <div class="form-group">
+                    <label><i class="fas fa-calendar-alt"></i> تاريخ الدفعة</label>
+                    <input type="date" id="paymentDate">
+                </div>
+                <div class="form-group">
+                    <label><i class="fas fa-comment-dots"></i> ملاحظات إضافية</label>
+                    <textarea id="paymentNote" rows="3" placeholder="اكتب تفاصيل إضافية هنا..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closePaymentModal()">إلغاء</button>
+                <button class="btn btn-primary" id="savePaymentBtn">حفظ الدفعة</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="invoiceTemplate" style="display:none; direction:rtl; font-family:Cairo; padding:20px; font-size:11px;">
+        <h2 style="text-align:center; font-size:16px; margin-bottom:10px;">فاتورة دفعات الزبون</h2>
+
+        <div style="margin-bottom:10px; font-size:10px;">
+            <strong>الاسم:</strong> <span id="invNameAr"></span><br>
+            <strong>English Name:</strong> <span id="invNameEn"></span><br>
+            <strong>التاريخ:</strong> <span id="invDate"></span>
+        </div>
+
+        <table border="1" width="100%" cellspacing="0" cellpadding="5"
+            style="border-collapse:collapse; text-align:center; font-size:9px;">
+            <thead style="background:#4f46e5; color:white;">
+                <tr>
+                    <th>المبلغ</th>
+                    <th>الباقي</th>
+                    <th>السرعة</th>
+                    <th>ملاحظة</th>
+                    <th>تاريخ الدفعة</th>
+                </tr>
+            </thead>
+            <tbody id="invTableBody"></tbody>
+        </table>
+    </div>
+    <script src="script.js"></script>
+
+</body>
+
+</html>

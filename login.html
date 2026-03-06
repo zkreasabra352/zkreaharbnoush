@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تسجيل الدخول - النظام الاحترافي</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --primary-color: #4f46e5;
+            --primary-dark: #4338ca;
+            --secondary-color: #818cf8;
+            --bg-gradient: linear-gradient(135deg, #1e1b4b, #312e81);
+            --text-color: #1f2937;
+            --error-color: #ef4444;
+        }
+
+        * { box-sizing: border-box; outline: none; }
+
+        body {
+            font-family: 'Cairo', sans-serif;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: var(--bg-gradient);
+            overflow: hidden;
+            position: relative;
+        }
+
+        body::before {
+            content: '';
+            position: absolute;
+            width: 200px; height: 200px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 50%;
+            top: -50px; left: -50px;
+            filter: blur(50px);
+        }
+
+        body::after {
+            content: '';
+            position: absolute;
+            width: 300px; height: 300px;
+            background: rgba(79, 70, 229, 0.2);
+            border-radius: 50%;
+            bottom: -100px; right: -50px;
+            filter: blur(60px);
+        }
+
+        .login-box {
+            background: rgba(255,255,255,0.95);
+            padding: 40px 35px;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+            width: 400px; max-width: 90%;
+            text-align: center;
+            position: relative;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.3);
+            animation: fadeIn 0.8s ease-out;
+        }
+
+        @keyframes fadeIn { from {opacity:0; transform: translateY(-20px);} to {opacity:1; transform: translateY(0);} }
+
+        .login-box h2 { margin-bottom: 10px; color: var(--primary-color); font-weight:800; font-size:28px; letter-spacing:0.5px; }
+        .subtitle { color:#6b7280; font-size:14px; margin-bottom:30px; display:block; }
+
+        .input-group { position: relative; margin-bottom: 20px; text-align: right; }
+        .input-group input {
+            width: 100%;
+            padding: 14px 45px 14px 15px;
+            border-radius: 10px;
+            border: 2px solid #e5e7eb;
+            font-size: 15px;
+            font-family: 'Cairo', sans-serif;
+            transition: all 0.3s ease;
+            background: #f9fafb;
+        }
+        .input-group input:focus { border-color: var(--primary-color); background:#fff; box-shadow:0 0 0 4px rgba(79,70,229,0.1); }
+        .input-group i { position:absolute; right:15px; top:50%; transform: translateY(-50%); color:#9ca3af; font-size:18px; transition: all 0.3s; cursor:pointer; }
+        .input-group input:focus + i { color: var(--primary-color); transform: translateY(-50%) scale(1.1); }
+
+        .toggle-password { position:absolute; left:15px; top:50%; transform:translateY(-50%); cursor:pointer; color:#9ca3af; transition: color 0.3s; }
+        .toggle-password:hover { color: var(--primary-color); }
+
+        button {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(to right, var(--primary-color), var(--primary-dark));
+            color: #fff;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 700;
+            font-family: 'Cairo', sans-serif;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(79,70,229,0.3);
+            margin-top: 10px;
+        }
+        button:hover { transform: translateY(-2px); box-shadow:0 6px 20px rgba(79,70,229,0.4);}
+        button:active { transform: translateY(0); }
+
+        .error-message {
+            color: var(--error-color);
+            margin-bottom: 15px;
+            display: none;
+            background: #fef2f2;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 14px;
+            border: 1px solid #fecaca;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        .error-message i { font-size: 16px; }
+
+        .spinner {
+            display: none;
+            margin: 10px auto;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid var(--primary-color);
+            border-radius: 50%;
+            width: 24px; height:24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0%{transform:rotate(0deg);} 100%{transform:rotate(360deg);} }
+
+        @media(max-width:480px){
+            .login-box { width:90%; padding:30px 20px; }
+            .login-box h2 { font-size:24px; }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="login-box">
+        <h2>مرحباً بك</h2>
+        <span class="subtitle">سجل دخولك لإدارة النظام</span>
+
+        <div class="error-message" id="errorMsg">
+            <i class="fas fa-exclamation-circle"></i>
+            <span id="errorText"></span>
+        </div>
+
+        <div class="spinner" id="spinner"></div>
+
+        <div class="input-group">
+            <input type="email" id="email" placeholder="البريد الإلكتروني" required>
+            <i class="fas fa-envelope"></i>
+        </div>
+
+        <div class="input-group">
+            <input type="password" id="password" placeholder="كلمة المرور" required>
+            <i class="fas fa-lock"></i>
+            <i class="fas fa-eye toggle-password" id="togglePassword"></i>
+        </div>
+
+        <button onclick="login()">
+            <span id="btnText">تسجيل الدخول</span>
+        </button>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyDeKBkk7OjILKwmfNaNr1J-8c99WeRk_Y8",
+            authDomain: "company-payments-system.firebaseapp.com",
+            projectId: "company-payments-system",
+            storageBucket: "company-payments-system.firebasestorage.app",
+            messagingSenderId: "827863505736",
+            appId: "1:827863505736:web:2d924cfcc7c3a45415b17d",
+            measurementId: "G-0V1KLHFT35"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+
+        function login() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const errorMsg = document.getElementById('errorMsg');
+            const spinner = document.getElementById('spinner');
+            const btnText = document.getElementById('btnText');
+            errorMsg.style.display = 'none';
+            spinner.style.display = 'block';
+            btnText.style.display = 'none';
+            auth.signInWithEmailAndPassword(email, password)
+                .then(() => { window.location.href = 'index.html'; })
+                .catch(error => {
+                    spinner.style.display = 'none';
+                    btnText.style.display = 'block';
+                    errorMsg.style.display = 'flex';
+                    let message = error.message;
+                    if(error.code==='auth/user-not-found') message="لا يوجد مستخدم بهذا البريد الإلكتروني.";
+                    else if(error.code==='auth/wrong-password') message="كلمة المرور غير صحيحة.";
+                    else if(error.code==='auth/invalid-email') message="صيغة البريد الإلكتروني غير صحيحة.";
+                    else if(error.code==='auth/too-many-requests') message="حاولت الدخول عدة مرات، يرجى المحاولة لاحقاً.";
+                    document.getElementById('errorText').textContent = message;
+                });
+        }
+
+        auth.onAuthStateChanged(user => {
+            if(!user && !window.location.href.includes('login.html')){
+                window.location.href = 'login.html';
+            }
+        });
+
+        // تبديل رؤية كلمة المرور
+        const togglePassword = document.getElementById('togglePassword');
+        const passwordField = document.getElementById('password');
+        togglePassword.addEventListener('click', () => {
+            const type = passwordField.getAttribute('type') === 'password' ? 'text' : 'password';
+            passwordField.setAttribute('type', type);
+            togglePassword.classList.toggle('fa-eye-slash');
+        });
+    </script>
+</body>
+</html>
