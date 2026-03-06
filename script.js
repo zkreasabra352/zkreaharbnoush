@@ -1,39 +1,4 @@
-// ================== إعداد Firebase ==================
-const firebaseConfig = {
-    apiKey: "AIzaSyDeKBkk7OjILKwmfNaNr1J-8c99WeRk_Y8",
-    authDomain: "company-payments-system.firebaseapp.com",
-    databaseURL: "https://company-payments-system-default-rtdb.europe-west1.firebasedatabase.app",
-    projectId: "company-payments-system",
-    storageBucket: "company-payments-system.firebasestorage.app",
-    messagingSenderId: "827863505736",
-    appId: "1:827863505736:web:2d924cfcc7c3a45415b17d",
-    measurementId: "G-0V1KLHFT35"
-};
-firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
-const auth = firebase.auth();
-auth.onAuthStateChanged(user => {
-    if (!user) {
-        window.location.href = "login.html";
-        return;
-    }
 
-    // إذا كانت صفحة الزبائن
-    if (document.getElementById('customersTable')) {
-        loadCustomers();
-    }
-
-    // إذا كانت صفحة الدفعات
-    if (document.getElementById('paymentsTable')) {
-        loadPayments();
-    }
-
-    // إذا كانت صفحة السجلات
-    if (document.getElementById('logsTable')) {
-        loadLogs();
-    }
-});
-// ================== دوال الزبائن ==================
 let editingCustomerId = null;
 const customerModal = document.getElementById('customerModal');
 const customerModalTitle = document.getElementById('customerModalTitle');
