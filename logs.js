@@ -35,28 +35,52 @@ function formatLogDetails(details) {
     return html;
 }
 
-function loadLogs() {
+async function loadLogs() {
     const table = document.getElementById('logsTable');
     if (!table) return;
 
     db.collection('logs')
-        .orderBy('timestamp', 'desc')
-        .onSnapshot(snapshot => {
+.orderBy('timestamp', 'desc')
+.limit(100)        .onSnapshot(snapshot => {
+
             table.innerHTML = '';
 
             snapshot.forEach(doc => {
+
                 const log = doc.data();
 
+                // ✅ الاسم السريع من السجل
+                let customerName = log.customerName || "-";
+
                 const row = `
-            <tr data-action="${log.action || ''}">
-                <td>${log.timestamp ? new Date(log.timestamp).toLocaleString('ar-EG') : ''}</td>
-                <td>${log.action || ''}</td>
-                <td>${log.userEmail || 'غير معروف'}</td>
-                <td>${log.userId || log.paymentId || '-'}</td>
-                <td>${formatLogDetails(log.details)}</td>
-            </tr>
-            `;
+                <tr data-action="${log.action || ''}">
+                    <td>${log.timestamp ? new Date(log.timestamp).toLocaleString('ar-EG') : ''}</td>
+                    <td>${log.action || ''}</td>
+                    <td>${log.userEmail || 'غير معروف'}</td>
+                    <td id="user-${doc.id}">${customerName}</td>
+                    <td>${formatLogDetails(log.details)}</td>
+                </tr>
+                `;
+
                 table.insertAdjacentHTML('beforeend', row);
+
+                // ✅ fallback للسجلات القديمة فقط (بدون إبطاء)
+                if (!log.customerName && log.userId) {
+                    db.collection('users').doc(log.userId).get()
+                        .then(userDoc => {
+                            if (userDoc.exists) {
+                                const userData = userDoc.data();
+                                const name = userData.nameAr || userData.nameEn || "-";
+
+                                const cell = document.getElementById(`user-${doc.id}`);
+                                if (cell) cell.innerText = name;
+                            }
+                        })
+                        .catch(err => {
+                            console.error("خطأ في جلب الاسم:", err);
+                        });
+                }
+
             });
         });
 }

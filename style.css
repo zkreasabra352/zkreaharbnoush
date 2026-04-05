@@ -623,7 +623,7 @@ tr[data-action="deletePayment"] {
         box-shadow: 0 6px 15px rgba(0, 0, 0, 0.2);
     }
 
-   
+
 
     /* شريط الإجراءات العائم */
 
@@ -693,6 +693,15 @@ tr[data-action="deletePayment"] {
         }
     }
 
-    
+    .btn-warning {
+        background: #f59e0b;
+        color: white;
+    }
+
+    .btn-warning:hover {
+        background: #d97706;
+    }
+
+
 
 }

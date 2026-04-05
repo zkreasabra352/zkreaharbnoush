@@ -30,6 +30,7 @@ function loadCustomers() {
         }
     });
 
+
     // البحث أثناء الكتابة
     if (searchInput) {
         searchInput.addEventListener('input', () => {
@@ -105,6 +106,7 @@ firebase.auth().onAuthStateChanged(user => {
     }
 
 });
+
 // دالة عرض الزبائن في الجدول
 function renderCustomers(customers) {
     const table = document.getElementById('customersTable');
@@ -286,24 +288,26 @@ if (saveCustomerBtn) saveCustomerBtn.addEventListener('click', () => {
                     .then(() => {
                         showToast("تم تعديل بيانات الزبون");
 
-                        db.collection('logs').add({
-                            action: 'editCustomer',
-                            userEmail: auth.currentUser.email || 'غير معروف',
-                            userId: editingCustomerId,
-                            details: { nameAr, nameEn, note },
-                            timestamp: new Date().toISOString()
-                        });
+                       db.collection('logs').add({
+    action: 'editCustomer',
+    userEmail: auth.currentUser.email || 'غير معروف',
+    userId: editingCustomerId,
+    customerName: nameAr, // 🔥
+    details: { nameAr, nameEn, note },
+    timestamp: new Date().toISOString()
+});
                     });
             } else {
                 db.collection('users').add({ nameAr, nameEn, note, createdAt })
                     .then(docRef => {
                         showToast("تم إضافة الزبون بنجاح");
                         db.collection('logs').add({
-                            action: 'addCustomer',
-                            userEmail: auth.currentUser.email || 'غير معروف',
-                            userId: docRef.id,
-                            details: { nameAr, nameEn, note },
-                            timestamp: new Date().toISOString()
+                          action: 'addCustomer',
+                          userEmail: auth.currentUser.email || 'غير معروف',
+                          userId: docRef.id,
+                          customerName: nameAr, // 🔥 أضف هذا
+                          details: { nameAr, nameEn, note },
+                          timestamp: new Date().toISOString()
                         });
                     });
             }
@@ -317,26 +321,49 @@ if (saveCustomerBtn) saveCustomerBtn.addEventListener('click', () => {
 
 function editCustomer(userId) { openCustomerModal(userId); }
 
-// حذف الزبون مع جميع الدفعات
+// حذف الزبون مع جميع الدفعات والديون
 function deleteCustomer(userId) {
     if (!userId) return;
 
-    db.collection('users').doc(userId).collection('payments').get()
-        .then(snapshot => {
-            const batch = db.batch();
-            snapshot.forEach(doc => batch.delete(doc.ref));
-            return batch.commit();
-        })
-        .then(() => db.collection('users').doc(userId).delete())
-        .then(() => {
-            showToast("تم حذف الزبون");
+    // 🔥 أولاً نجيب اسم الزبون
+    db.collection('users').doc(userId).get()
+        .then(userDoc => {
+            const userData = userDoc.data();
+            const customerName = userData?.nameAr || userData?.nameEn || "غير معروف";
 
-            db.collection('logs').add({
-                action: 'deleteCustomer',
-                userEmail: auth.currentUser.email || 'غير معروف',
-                userId,
-                timestamp: new Date().toISOString()
-            });
+            const batch = db.batch();
+
+            // 1️⃣ حذف جميع دفعات الزبون
+            db.collection('users').doc(userId).collection('payments').get()
+                .then(paymentsSnap => {
+                    paymentsSnap.forEach(doc => batch.delete(doc.ref));
+
+                    // 2️⃣ حذف كل الديون المرتبطة بالزبون من مجموعة debts
+                    return db.collection('debts').where('customerId', '==', userId).get();
+                })
+                .then(debtsSnap => {
+                    debtsSnap.forEach(doc => batch.delete(doc.ref));
+
+                    // 3️⃣ حذف الزبون نفسه
+                    const userRef = db.collection('users').doc(userId);
+                    batch.delete(userRef);
+
+                    // تنفيذ كل الحذف دفعة واحدة
+                    return batch.commit();
+                })
+                .then(() => {
+                    // 4️⃣ سجل العملية
+                    db.collection('logs').add({
+                        action: 'deleteCustomer',
+                        userEmail: auth.currentUser?.email || 'غير معروف',
+                        userId,
+                        customerName: customerName,
+                        timestamp: new Date().toISOString()
+                    });
+
+                    showToast("تم حذف الزبون وجميع الدفعات والديون بنجاح");
+                })
+                .catch(err => console.error("خطأ عند حذف الزبون:", err));
         });
 }
 
@@ -359,48 +386,39 @@ function loadPayments() {
 
     if (!table) return;
 
+    // تنظيف المصفوفة
+    allPayments = [];
+
     db.collection('users')
         .doc(userId)
         .collection('payments')
+        .orderBy('paymentDate', 'desc')
         .onSnapshot(snapshot => {
             table.innerHTML = '';
             let count = 0;
 
             snapshot.forEach(doc => {
-                const p = doc.data();
+                const p = { id: doc.id, ...doc.data() };
+                allPayments.push(p); // 🔥 حفظ في المصفوفة العالمية
                 count++;
 
                 const row = `
-    <tr id="payment-row-${doc.id}">
-        <td data-label="تحديد">
-            <input type="checkbox"
-                   class="payment-checkbox"
-                   value="${doc.id}"
-                   onchange="updatePaymentSelectionBar()">
-        </td>
-
-        <td data-label="المبلغ">
-            ${p.amount || ''}
-        </td>
-
-        <td data-label="الباقي">
-            ${p.remaining || ''}
-        </td>
-
-        <td data-label="السرعة">
-            ${p.speed || ''}
-        </td>
-
-        <td data-label="ملاحظة">
-            ${p.note || ''}
-        </td>
-
-        <td data-label="تاريخ الدفعة">
-    ${p.paymentDate ? formatDate(p.paymentDate) : ''}
-</td>
-    </tr>
-    `;
-
+                    <tr id="payment-row-${doc.id}">
+                        <td data-label="تحديد">
+                            <input type="checkbox"
+                                   class="payment-checkbox"
+                                   value="${doc.id}"
+                                   onchange="updatePaymentSelectionBar()">
+                        </td>
+                        <td data-label="المبلغ">${p.amount || ''}</td>
+                        <td data-label="الباقي">${p.remaining || ''}</td>
+                        <td data-label="السرعة">${p.speed || ''}</td>
+                        <td data-label="ملاحظة">${p.note || ''}</td>
+                        <td data-label="تاريخ الدفعة">
+                            ${p.paymentDate ? formatDate(p.paymentDate) : ''}
+                        </td>
+                    </tr>
+                `;
                 table.insertAdjacentHTML('beforeend', row);
             });
 
@@ -474,31 +492,41 @@ if (savePaymentBtn) savePaymentBtn.addEventListener('click', () => {
                 showToast("تم تعديل الدفعة");
 
                 db.collection('logs').add({
-                    action: 'editPayment',
-                    userEmail: auth.currentUser.email || 'غير معروف',
-                    userId,
-                    paymentId: editingPaymentId,
-                    details: data,
-                    timestamp: new Date().toISOString()
-                });
+    action: 'editPayment',
+    userEmail: auth.currentUser.email || 'غير معروف',
+    userId,
+    customerName: localStorage.getItem('customerName') || "غير معروف",
+    paymentId: editingPaymentId,
+    details: data,
+    timestamp: new Date().toISOString()
+});
             });
     } else {
         db.collection('users').doc(userId).collection('payments').add(data)
             .then(docRef => {
                 showToast("تم إضافة دفعة بنجاح");
                 db.collection('logs').add({
-                    action: 'addPayment',
-                    userEmail: auth.currentUser.email || 'غير معروف',
-                    userId,
-                    paymentId: docRef.id,
-                    details: data,
-                    timestamp: new Date().toISOString()
-                });
+    action: 'addPayment',
+    userEmail: auth.currentUser.email || 'غير معروف',
+    userId,
+    customerName: localStorage.getItem('customerName') || "غير معروف", // 🔥
+    paymentId: docRef.id,
+    details: data,
+    timestamp: new Date().toISOString()
+});
             });
     }
 
     closePaymentModal();
 });
+function goToDebts() {
+    const userId = localStorage.getItem('currentUserId');
+    if (userId) {
+        window.location.href = `debts.html?customerId=${userId}`;
+    } else {
+        alert('خطأ: لم يتم العثور على بيانات الزبون');
+    }
+}
 function updatePaymentSelectionBar() {
     const selected = document.querySelectorAll('.payment-checkbox:checked');
     const count = selected.length;
@@ -542,59 +570,144 @@ function editSelectedPayments() {
         clearPaymentsSelection();
     }
 }
-async function printCustomerInvoice() {
-    const userId = localStorage.getItem('currentUserId');
-    if (!userId) return;
-
-    const userDoc = await db.collection('users').doc(userId).get();
-    const user = userDoc.data();
-
-    const paymentsSnapshot = await db.collection('users')
-        .doc(userId)
-        .collection('payments')
-        .get();
-
-    // تعبئة البيانات
-    document.getElementById("invNameAr").innerText = user.nameAr || "";
-    document.getElementById("invNameEn").innerText = user.nameEn || "";
-    document.getElementById("invDate").innerText = new Date().toLocaleDateString('ar-EG');
-
-    const tbody = document.getElementById("invTableBody");
-    tbody.innerHTML = "";
-
-    paymentsSnapshot.forEach(docSnap => {
-        const p = docSnap.data();
-
-        tbody.innerHTML += `
-    <tr>
-        <td>${p.amount || ""}</td>
-        <td>${p.remaining || ""}</td>
-        <td>${p.speed || ""}</td>
-        <td>${p.note || ""}</td>
-        <td>${p.paymentDate ? formatDate(p.paymentDate) : ""}</td>
-    </tr>
-`;
-    });
-
-    const invoice = document.getElementById("invoiceTemplate");
-    invoice.style.display = "block";
-
-    const canvas = await html2canvas(invoice, { scale: 2, useCORS: true });
-
-    const imgData = canvas.toDataURL("image/png");
-
-    const { jsPDF } = window.jspdf;
-    const pdf = new jsPDF("p", "mm", "a4");
-
-    const imgWidth = 190;
-    const pageHeight = 280;
-    const imgHeight = canvas.height * imgWidth / canvas.width;
-
-    pdf.addImage(imgData, "PNG", 10, 10, imgWidth, imgHeight);
-
-    pdf.save(`Invoice_${user.nameEn}.pdf`);
-
-    invoice.style.display = "none";
+let allPayments = [];
+function printCustomerInvoice() {
+    const printWindow = window.open('', '_blank');
+    const customerNameTitle = document.getElementById('customerNameTitle').textContent;
+    
+    printWindow.document.write(`
+        <!DOCTYPE html>
+        <html lang="ar" dir="rtl">
+        <head>
+            <meta charset="UTF-8">
+            <title>فاتورة دفعات ${customerNameTitle}</title>
+            <style>
+                @page { margin: 20mm; }
+                * { margin: 0; padding: 0; box-sizing: border-box; }
+                body { 
+                    font-family: 'Cairo', 'Arial', sans-serif; 
+                    font-size: 12px; 
+                    line-height: 1.4;
+                    color: #333;
+                    direction: rtl;
+                    text-align: right;
+                }
+                .header { 
+                    text-align: center; 
+                    background: linear-gradient(135deg, #10b981, #059669);
+                    color: white; 
+                    padding: 25px; 
+                    margin-bottom: 25px;
+                    border-radius: 10px 10px 0 0;
+                }
+                .header h1 { font-size: 24px; margin-bottom: 8px; }
+                .header p { font-size: 15px; opacity: 0.95; }
+                .info-box { 
+                    background: #f0fdf4; 
+                    padding: 20px; 
+                    border-radius: 12px; 
+                    margin-bottom: 25px;
+                    border-right: 5px solid #10b981;
+                    box-shadow: 0 4px 12px rgba(16,185,129,0.15);
+                }
+                .info-row { margin-bottom: 12px; font-size: 14px; }
+                .info-label { font-weight: 700; color: #10b981; margin-left: 8px; }
+                table { 
+                    width: 100%; 
+                    border-collapse: collapse; 
+                    margin-top: 20px;
+                    box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+                    border-radius: 12px;
+                    overflow: hidden;
+                }
+                th, td { 
+                    padding: 15px 10px; 
+                    text-align: center; 
+                    border: 1px solid #e2e8f0;
+                }
+                th { 
+                    background: #10b981; 
+                    color: white; 
+                    font-weight: 700;
+                    font-size: 12px;
+                }
+                tr:nth-child(even) { background: #f0fdf4; }
+                tr:hover { background: #d1fae5 !important; transform: scale(1.01); transition: all 0.2s; }
+                .footer { 
+                    margin-top: 35px; 
+                    padding-top: 25px; 
+                    border-top: 3px dashed #a7f3d0;
+                    text-align: center;
+                    font-size: 13px;
+                    color: #047857;
+                    font-weight: 600;
+                }
+                @media print {
+                    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                    .header { border-radius: 0; }
+                    tr:hover { background: inherit !important; transform: none; }
+                }
+            </style>
+            <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700&display=swap" rel="stylesheet">
+        </head>
+        <body>
+            <div class="header">
+                <h1>💰 سجل الدفعات</h1>
+                <p>نظام إدارة الزبائن المتكامل</p>
+            </div>
+            
+            <div class="info-box">
+                <div class="info-row">
+                    <span class="info-label">👤 الزبون:</span> 
+                    <strong>${customerNameTitle}</strong>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">📅 تاريخ التقرير:</span> 
+                    <strong>${new Date().toLocaleDateString('ar-SA', {year: 'numeric', month: 'long', day: 'numeric'})}</strong>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">📊 إجمالي الدفعات:</span> 
+                    <strong>${allPayments.length}</strong>
+                </div>
+            </div>
+            
+            <table>
+                <thead>
+                    <tr>
+                        <th>المبلغ</th>
+                        <th>الباقي</th>
+                        <th>السرعة</th>
+                        <th>ملاحظة</th>
+                        <th>تاريخ الدفعة</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${allPayments.map(payment => `
+                        <tr>
+                            <td style="font-weight: 600; font-size: 13px;">${payment.amount || '-'}</td>
+                            <td>${payment.remaining || '-'}</td>
+                            <td>${payment.speed || '-'}</td>
+                            <td style="max-width: 120px; word-break: break-word;">${payment.note || '-'}</td>
+                            <td style="font-weight: 500;">${payment.paymentDate ? formatDate(payment.paymentDate) : '-'}</td>
+                        </tr>
+                    `).join('') || '<tr><td colspan="5" style="text-align:center; padding:30px; color:#666; font-size:16px;"><i class="fas fa-inbox"></i><br>لا توجد دفعات</td></tr>'}
+                </tbody>
+            </table>
+            
+            <div class="footer">
+                <p>✅ تم إنشاء هذا التقرير بواسطة <strong>نظام إدارة الزبائن</strong></p>
+                <p>شكراً لثقتكم بنا 💚</p>
+            </div>
+        </body>
+        </html>
+    `);
+    
+    printWindow.document.close();
+    printWindow.onload = () => {
+        setTimeout(() => printWindow.print(), 500);
+    };
+    
+    showToast('✅ انقر "طباعة" في النافذة الجديدة', 'success');
 }
 function deleteSelectedPayments() {
     const userId = localStorage.getItem('currentUserId');
@@ -615,12 +728,13 @@ function deleteSelectedPayments() {
                 showToast("تم حذف الدفعة");
 
                 db.collection('logs').add({
-                    action: 'deletePayment',
-                    userEmail: auth.currentUser.email || 'غير معروف',
-                    userId,
-                    paymentId: cb.value,
-                    timestamp: new Date().toISOString()
-                });
+    action: 'deletePayment',
+    userEmail: auth.currentUser.email || 'غير معروف',
+    userId,
+    customerName: localStorage.getItem('customerName') || "غير معروف",
+    paymentId: cb.value,
+    timestamp: new Date().toISOString()
+});
             });
     });
 
@@ -709,3 +823,13 @@ function deletePayment(paymentId) {
 }
 
 // ================== تشغيل التحميل التلقائي ==================
+// ================== تشغيل التحميل التلقائي ==================
+
+// 🔥 هنا تضع الكود
+window.addEventListener('online', () => {
+  showToast('✅ متصل بالإنترنت', 'success');
+});
+
+window.addEventListener('offline', () => {
+  showToast('⚠️ غير متصل - العمل offline', 'warning');
+});

@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ديون الزبون | النظام</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf-arabic@1.0.0/dist/jspdf.plugin.arabic.min.js"></script>
+    <style>
+        body { display: none; }
+        body.loaded { display: block; }
+        .loading-screen { position: fixed; top:0; left:0; width:100%; height:100%; background:#1e1b4b; z-index:9999; display:flex; justify-content:center; align-items:center; color:white; font-family:'Cairo', sans-serif; }
+        .total-debt { background: linear-gradient(135deg, #ef4444, #dc2626); color:white; padding:20px; border-radius:16px; margin-bottom:20px; text-align:center; box-shadow:0 10px 25px rgba(239,68,68,0.3); }
+        .total-debt h3 { font-size:18px; margin-bottom:10px; opacity:0.9; }
+        .total-debt .amount { font-size:32px; font-weight:700; margin-bottom:5px; }
+    </style>
+</head>
+<body>
+    <div id="loadingScreen" class="loading-screen">
+        <div style="text-align:center;">
+            <i class="fas fa-spinner fa-spin fa-3x"></i>
+            <p style="margin-top:15px;">جاري التحقق من بيانات الدخول...</p>
+        </div>
+    </div>
+
+    <div id="appContent" style="display:none;">
+        <!-- شريط التحديد -->
+        <div id="debtSelectionBar" class="selection-bar">
+            <div class="selection-info">تم تحديد: <span id="selectedDebtsCount">0</span></div>
+            <div class="selection-actions">
+                <button class="btn btn-edit-alt" onclick="editSelectedDebts()"><i class="fas fa-pen"></i> تعديل</button>
+                <button class="btn btn-danger-alt" onclick="deleteSelectedDebts()"><i class="fas fa-trash"></i> حذف المحدد</button>
+                <button class="btn btn-secondary-alt" onclick="clearDebtsSelection()">إلغاء</button>
+            </div>
+        </div>
+
+        <div class="app-wrapper">
+            <aside class="sidebar">
+                <div class="logo"><i class="fas fa-wallet"></i> <span>المالية</span></div>
+                <nav>
+                    <a href="index.html"><i class="fas fa-users"></i> الزبائن</a>
+                    <a href="customer.html"><i class="fas fa-file-invoice-dollar"></i> الدفعات</a>
+                    <a href="#" class="active"><i class="fas fa-credit-card"></i> الديون</a>
+                    <a href="index.html"><i class="fas fa-arrow-right"></i> العودة للرئيسية</a>
+                    <a href="logs.html"><i class="fas fa-list"></i> السجلات</a>
+                </nav>
+            </aside>
+
+            <main class="main-content">
+                <header class="top-bar">
+                    <div class="user-info">سجل ديون الزبون</div>
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <button id="addDebtBtn" class="btn btn-primary"><i class="fas fa-plus"></i> إضافة دين جديد</button>
+                        <button onclick="printDebtsReport()" class="btn btn-secondary"><i class="fas fa-print"></i> طباعة التقرير</button>
+                        <button onclick="goToPayments()" class="btn btn-warning"><i class="fas fa-file-invoice-dollar"></i> الدفعات</button>
+                        <input type="date" id="debtDateFilter" onchange="filterDebtsByDate()" style="padding:5px 10px; margin-left:10px; width:150px;">
+                        <span id="debtsCount" style="font-weight:700;">عدد الديون: 0</span>
+                    </div>
+                </header>
+
+                <div class="container">
+                    <div id="customerInfo" style="background:#eef2ff; padding:12px 18px; border-radius:10px; margin-bottom:15px; font-weight:700; color:#3730a3;">
+                        الزبون: <span id="customerNameDebtTitle">...</span>
+                    </div>
+
+                    <div class="card table-card">
+                        <div class="table-responsive">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th style="width:50px;"><input type="checkbox" id="selectAllDebts" onclick="toggleSelectAllDebts()"></th>
+                                        <th>المبلغ</th>
+                                        <th>نصي الكيبل</th>
+                                        <th>نصي القطع</th>
+                                        <th>نصي الماك</th>
+                                        <th>نصي الملاحظة</th>
+                                        <th>التاريخ</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="debtsTable"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- مودال الدين -->
+    <div id="debtModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="debtModalTitle">إضافة دين جديد</h2>
+                <span class="modal-close" onclick="closeDebtModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group"><label>المبلغ</label><input type="text" id="debtAmount" placeholder="مثلاً: 500 ريال"></div>
+                <div class="form-group"><label>نصي الكيبل</label><input type="text" id="cableShare" placeholder="مثلاً: 200 ريال"></div>
+                <div class="form-group"><label>نصي القطع</label><input type="text" id="cutShare" placeholder="مثلاً: 150 ريال"></div>
+                <div class="form-group"><label>نصي الماك</label><input type="text" id="macShare" placeholder="مثلاً: 100 ريال"></div>
+                <div class="form-group"><label>نصي الملاحظة</label><input type="text" id="noteShare" placeholder="مثلاً: 50 ريال"></div>
+                <div class="form-group"><label>تاريخ الدين</label><input type="date" id="debtDate"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeDebtModal()">إلغاء</button>
+                <button class="btn btn-primary" id="saveDebtBtn">حفظ الدين</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase Config -->
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyDeKBkk7OjILKwmfNaNr1J-8c99WeRk_Y8",
+            authDomain: "company-payments-system.firebaseapp.com",
+            projectId: "company-payments-system",
+            storageBucket: "company-payments-system.firebasestorage.app",
+            messagingSenderId: "827863505736",
+            appId: "1:827863505736:web:2d924cfcc7c3a45415b17d",
+            measurementId: "G-0V1KLHFT35"
+        };
+        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+
+        let currentCustomerId = null;
+
+        auth.onAuthStateChanged(user => {
+            if (user) {
+                document.getElementById('loadingScreen').style.display='none';
+                document.getElementById('appContent').style.display='block';
+                document.body.classList.add('loaded');
+                const params = new URLSearchParams(window.location.search);
+                currentCustomerId = params.get('customerId');
+                if (!currentCustomerId) { window.location.href="index.html"; return; }
+                loadCustomerName();
+                loadDebts();
+            } else {
+                window.location.href="login.html";
+            }
+        });
+
+        function loadCustomerName() {
+            db.collection('users').doc(currentCustomerId).get().then(doc=>{
+                if(doc.exists){
+                    const data = doc.data();
+                    document.getElementById("customerNameDebtTitle").innerText = data.nameAr || data.nameEn || "غير معروف";
+                }
+            });
+        }
+    </script>
+
+    <!-- سكريبت الديون النهائي -->
+    <script src="debts.js"></script>
+    <div id="toast" class="toast-notification"></div>
+</body>
+</html>

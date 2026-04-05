@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 
 <head>
-    <meta charset="UTF-8">
+   <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>دفعات الزبون | النظام</title>
     <link rel="stylesheet" href="style.css">
@@ -16,6 +16,17 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+
+    <!-- 🔥 PWA موظفين -->
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#4f46e5">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js');
+    }
+    </script>
 
     <style>
         body {
@@ -93,6 +104,9 @@
                         </button>
                         <button onclick="printCustomerInvoice()" class="btn btn-secondary">
                             <i class="fas fa-print"></i> طباعة الفاتورة
+                        </button>
+                        <button onclick="goToDebts()" class="btn btn-warning">
+                            <i class="fas fa-credit-card"></i> الديون
                         </button>
                         <input type="date" id="paymentDateFilter" onchange="filterPaymentsByDate()"
                             style="padding:5px 10px; margin-left:10px; width:150px;">

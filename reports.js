@@ -1,195 +1,229 @@
-// ================== إعداد Firebase ==================
+// Firebase Config
 const firebaseConfig = {
     apiKey: "AIzaSyDeKBkk7OjILKwmfNaNr1J-8c99WeRk_Y8",
     authDomain: "company-payments-system.firebaseapp.com",
-    databaseURL: "https://company-payments-system-default-rtdb.europe-west1.firebasedatabase.app",
     projectId: "company-payments-system",
     storageBucket: "company-payments-system.firebasestorage.app",
     messagingSenderId: "827863505736",
-    appId: "1:827863505736:web:2d924cfcc7c3a45415b17d",
-    measurementId: "G-0V1KLHFT35"
+    appId: "1:827863505736:web:2d924cfcc7c3a45415b17d"
 };
+
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const auth = firebase.auth();
 
-auth.onAuthStateChanged(user => {
+let allReportData = []; // تخزين البيانات للتصدير
+
+auth.onAuthStateChanged(async (user) => {
+    const loadingScreen = document.getElementById('loadingScreen');
+    const appContent = document.getElementById('appContent');
+    
     if (!user) {
-        window.location.href = "login.html";
+        window.location.href = 'login.html';
         return;
     }
+
+    // تحميل الإحصائيات السريعة
+    await loadQuickStats();
+    
+    loadingScreen.style.display = 'none';
+    appContent.style.display = 'block';
+    
+    showToast('✅ تم تحميل التقارير بنجاح', 'success');
 });
 
-// ================== دالة استخراج التاريخ من ISO ==================
-function extractDateFromISO(isoString) {
-    if (!isoString) return '';
-    return isoString.split('T')[0];
+// ================== الإحصائيات السريعة ==================
+async function loadQuickStats() {
+    const usersSnapshot = await db.collection('users').get();
+    const totalCustomers = usersSnapshot.size;
+    document.getElementById('totalCustomers').textContent = totalCustomers;
+
+    let totalPayments = 0;
+    for (const userDoc of usersSnapshot.docs) {
+        const paymentsSnapshot = await db.collection('users').doc(userDoc.id).collection('payments').get();
+        totalPayments += paymentsSnapshot.size;
+    }
+    document.getElementById('totalPayments').textContent = totalPayments;
+    document.getElementById('reportCount').textContent = `الدفعات: ${totalPayments}`;
 }
 
-// ================== دالة تحويل التاريخ للعرض ==================
+// ================== استخراج التاريخ ==================
+function extractDateFromISO(isoString) {
+    return isoString ? isoString.split('T')[0] : '';
+}
+
 function formatDateForDisplay(dateString) {
     if (!dateString) return '';
     const parts = dateString.split('-');
-    if (parts.length === 3) {
-        const year = parts[0];
-        const month = parts[1];
-        const day = parts[2];
-        return `${day}-${month}-${year}`;
-    }
-    return dateString;
+    return parts.length === 3 ? `${parts[2]}-${parts[1]}-${parts[0]}` : dateString;
 }
 
-// ================== دالة عرض التقرير حسب التاريخ (مُحسّنة) ==================
+// ================== عرض التقرير حسب التاريخ ==================
 async function generateReport() {
     const table = document.getElementById('reportTableBody');
     const dateFilter = document.getElementById('reportDate').value;
-    const countSpan = document.getElementById('reportCount');
-
-    // مسح الجدول أولاً
-    table.innerHTML = '';
-
+    
     if (!dateFilter) {
-        alert('يرجى اختيار تاريخ للعرض');
+        showToast('يرجى اختيار تاريخ', 'warning');
         return;
     }
 
-    // إظهار مؤشر التحميل
-    table.innerHTML = '<tr><td colspan="7" style="text-align:center;">جاري التحميل...</td></tr>';
+    table.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:20px;"><i class="fas fa-spinner fa-spin fa-2x"></i><br>جاري البحث...</td></tr>';
 
-    // جلب جميع الزبائن
-    const usersSnapshot = await db.collection('users').get();
-    let foundCount = 0;
+    try {
+        const usersSnapshot = await db.collection('users').get();
+        allReportData = [];
+        let foundCount = 0;
 
-    // استخدام Promise.all لتسريع التحميل
-    const userPromises = usersSnapshot.docs.map(async (userDoc) => {
-        const user = userDoc.data();
-        const userId = userDoc.id;
+        for (const userDoc of usersSnapshot.docs) {
+            const user = userDoc.data();
+            const userId = userDoc.id;
+            const paymentsSnapshot = await db.collection('users').doc(userId).collection('payments').get();
 
-        // جلب دفعات الزبون
-        const paymentsSnapshot = await db.collection('users').doc(userId).collection('payments').get();
+            for (const paymentDoc of paymentsSnapshot.docs) {
+                const payment = paymentDoc.data();
+                const paymentDateOnly = extractDateFromISO(payment.paymentDate);
 
-        // تصفية الدفعات حسب التاريخ المحدد
-        for (const paymentDoc of paymentsSnapshot.docs) {
-            const payment = paymentDoc.data();
-            const paymentDate = payment.paymentDate;
-            const paymentDateOnly = extractDateFromISO(paymentDate);
-
-            if (paymentDateOnly && paymentDateOnly === dateFilter) {
-                foundCount++;
-
-                const displayDate = formatDateForDisplay(paymentDateOnly);
-
-                const row = `
-                <tr>
-                    <td>${user.nameAr || ''}</td>
-                    <td>${user.nameEn || ''}</td>
-                    <td>${payment.amount || ''}</td>
-                    <td>${payment.remaining || ''}</td>
-                    <td>${payment.speed || ''}</td>
-                    <td>${payment.note || ''}</td>
-                    <td>${displayDate}</td>
-                </tr>
-                `;
-                table.insertAdjacentHTML('beforeend', row);
+                if (paymentDateOnly === dateFilter) {
+                    foundCount++;
+                    const displayDate = formatDateForDisplay(paymentDateOnly);
+                    
+                    const row = createReportRow(user, payment, displayDate);
+                    table.insertAdjacentHTML('beforeend', row);
+                    
+                    // حفظ للتصدير
+                    allReportData.push({
+                        nameAr: user.nameAr || '',
+                        nameEn: user.nameEn || '',
+                        amount: payment.amount || '',
+                        remaining: payment.remaining || '',
+                        speed: payment.speed || '',
+                        note: payment.note || '',
+                        date: displayDate
+                    });
+                }
             }
         }
-    });
 
-    // انتظار جميع الطلبات
-    await Promise.all(userPromises);
-
-    // تحديث العداد
-    if (countSpan) {
-        countSpan.innerText = `عدد الدفعات: ${foundCount}`;
-    }
-
-    // إزالة رسالة التحميل إذا لم توجد دفعات
-    if (foundCount === 0) {
-        table.innerHTML = '<tr><td colspan="7" style="text-align:center;">لا توجد دفعات في هذا التاريخ</td></tr>';
+        updateReportStats(foundCount);
+        if (foundCount === 0) {
+            table.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:30px; color:#666;">لا توجد دفعات في هذا التاريخ</td></tr>';
+        }
+        
+    } catch (error) {
+        console.error('خطأ في التقرير:', error);
+        table.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#ef4444;">حدث خطأ في تحميل التقرير</td></tr>';
+        showToast('خطأ في تحميل التقرير', 'error');
     }
 }
 
-// ================== دالة عرض التقرير بدون فلتر (مُحسّنة) ==================
+// ================== عرض كل الدفعات ==================
 async function showAllReport() {
     const table = document.getElementById('reportTableBody');
-    const countSpan = document.getElementById('reportCount');
+    table.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:20px;"><i class="fas fa-spinner fa-spin fa-2x"></i><br>جاري التحميل...</td></tr>';
 
-    // مسح الجدول أولاً
-    table.innerHTML = '';
-    table.innerHTML = '<tr><td colspan="7" style="text-align:center;">جاري التحميل...</td></tr>';
+    try {
+        const usersSnapshot = await db.collection('users').get();
+        allReportData = [];
+        let foundCount = 0;
 
-    const usersSnapshot = await db.collection('users').get();
-    let foundCount = 0;
+        for (const userDoc of usersSnapshot.docs) {
+            const user = userDoc.data();
+            const userId = userDoc.id;
+            const paymentsSnapshot = await db.collection('users').doc(userId).collection('payments').orderBy('paymentDate', 'desc').get();
 
-    const userPromises = usersSnapshot.docs.map(async (userDoc) => {
-        const user = userDoc.data();
-        const userId = userDoc.id;
-
-        const paymentsSnapshot = await db.collection('users').doc(userId).collection('payments').get();
-
-        for (const paymentDoc of paymentsSnapshot.docs) {
-            const payment = paymentDoc.data();
-            const displayDate = formatDateForDisplay(extractDateFromISO(payment.paymentDate));
-
-            foundCount++;
-
-            const row = `
-            <tr>
-                <td>${user.nameAr || ''}</td>
-                <td>${user.nameEn || ''}</td>
-                <td>${payment.amount || ''}</td>
-                <td>${payment.remaining || ''}</td>
-                <td>${payment.speed || ''}</td>
-                <td>${payment.note || ''}</td>
-                <td>${displayDate}</td>
-            </tr>
-            `;
-            table.insertAdjacentHTML('beforeend', row);
-        }
-    });
-
-    await Promise.all(userPromises);
-
-    if (countSpan) {
-        countSpan.innerText = `عدد الدفعات: ${foundCount}`;
-    }
-}
-
-// ================== دالة اختبار تنسيق التاريخ ==================
-async function testDateFormat() {
-    const dateFilter = document.getElementById('reportDate').value;
-    if (!dateFilter) {
-        alert('يرجى اختيار تاريخ أولاً');
-        return;
-    }
-
-    const usersSnapshot = await db.collection('users').get();
-    let testResults = [];
-
-    for (const userDoc of usersSnapshot.docs) {
-        const userId = userDoc.id;
-        const paymentsSnapshot = await db.collection('users').doc(userId).collection('payments').get();
-
-        for (const paymentDoc of paymentsSnapshot.docs) {
-            const payment = paymentDoc.data();
-            const paymentDate = payment.paymentDate;
-
-            if (paymentDate) {
-                const dateOnly = extractDateFromISO(paymentDate);
-                testResults.push({
-                    user: userDoc.data().nameAr,
-                    paymentDate: paymentDate,
-                    dateOnly: dateOnly,
-                    matches: dateOnly === dateFilter
+            for (const paymentDoc of paymentsSnapshot.docs) {
+                const payment = paymentDoc.data();
+                const displayDate = formatDateForDisplay(extractDateFromISO(payment.paymentDate));
+                
+                foundCount++;
+                const row = createReportRow(user, payment, displayDate);
+                table.insertAdjacentHTML('beforeend', row);
+                
+                allReportData.push({
+                    nameAr: user.nameAr || '',
+                    nameEn: user.nameEn || '',
+                    amount: payment.amount || '',
+                    remaining: payment.remaining || '',
+                    speed: payment.speed || '',
+                    note: payment.note || '',
+                    date: displayDate
                 });
             }
         }
+
+        updateReportStats(foundCount);
+        
+    } catch (error) {
+        console.error('خطأ:', error);
+        showToast('خطأ في تحميل التقرير', 'error');
+    }
+}
+
+// ================== إنشاء صف التقرير ==================
+function createReportRow(user, payment, displayDate) {
+    return `
+        <tr>
+            <td style="font-weight:600; color:#1f2937;">${user.nameAr || '-'}</td>
+            <td style="color:#6b7280;">${user.nameEn || '-'}</td>
+            <td style="font-weight:700; color:#059669;">${payment.amount || '-'}</td>
+            <td style="color:#d97706;">${payment.remaining || '-'}</td>
+            <td>${payment.speed || '-'}</td>
+            <td style="max-width:200px;">${payment.note || '-'}</td>
+            <td style="font-weight:500;">${displayDate}</td>
+        </tr>
+    `;
+}
+
+// ================== تحديث الإحصائيات ==================
+function updateReportStats(count) {
+    document.getElementById('reportCount').textContent = `الدفعات: ${count}`;
+}
+
+// ================== تصدير Excel ==================
+function exportToExcel() {
+    if (allReportData.length === 0) {
+        showToast('لا توجد بيانات للتصدير', 'warning');
+        return;
     }
 
-    console.log('=== نتائج اختبار التاريخ ===');
-    console.log('التاريخ المختار:', dateFilter);
-    console.log('عدد الدفعات:', testResults.length);
-    console.log('الدفعات المطابقة:', testResults.filter(r => r.matches).length);
+    let csv = 'الاسم العربي,English Name,المبلغ,الباقي,السرعة,ملاحظة,تاريخ الدفعة\n';
+    allReportData.forEach(row => {
+        csv += `"${row.nameAr}","${row.nameEn}","${row.amount}","${row.remaining}","${row.speed}","${row.note}","${row.date}"\n`;
+    });
 
-    alert(`✅ تم الاختبار!\n\nالتاريخ المختار: ${dateFilter}\nعدد الدفعات في النظام: ${testResults.length}\nالدفعات المطابقة: ${testResults.filter(r => r.matches).length}`);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `تقرير_الدفعات_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast('تم تصدير البيانات بنجاح ✅', 'success');
+}
+
+// ================== طباعة التقرير ==================
+function printReport() {
+    if (allReportData.length === 0) {
+        showToast('لا توجد بيانات للطباعة', 'warning');
+        return;
+    }
+    window.print();
+}
+
+// ================== إشعارات ==================
+function showToast(message, type = 'success') {
+    const toast = document.getElementById('toast');
+    toast.textContent = message;
+    toast.className = `toast-notification toast-${type} toast-show`;
+    setTimeout(() => toast.classList.remove('toast-show'), 3000);
+}
+
+// ================== تسجيل الخروج ==================
+function logout() {
+    auth.signOut().then(() => {
+        window.location.href = 'login.html';
+    });
 }
