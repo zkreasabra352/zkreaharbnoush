@@ -18,14 +18,13 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
 
     <!-- 🔥 PWA موظفين -->
-    <link rel="manifest" href="/manifest.json">
+<link rel="manifest" href="./manifest.json">
     <meta name="theme-color" content="#4f46e5">
-    <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <script>
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js');
-    }
+navigator.serviceWorker.register('./sw.js');    }
     </script>
 
     <style>
@@ -247,14 +246,14 @@ color:#3730a3;
             } else {
                 loadingScreen.innerHTML = '<div style="text-align: center;"><i class="fas fa-lock fa-3x"></i><p style="margin-top: 15px;">يجب تسجيل الدخول للمتابعة</p></div>';
                 setTimeout(() => {
-                    window.location.href = 'login.html';
+                    window.location.href = './login.html'; 
                 }, 1000);
             }
         });
 
         function logout() {
             auth.signOut().then(() => {
-                window.location.href = 'login.html';
+                window.location.href = './login.html';
             }).catch((error) => {
                 console.error("Error signing out:", error);
             });
@@ -262,6 +261,18 @@ color:#3730a3;
     </script>
 
     <script src="script.js"></script>
+     <script>
+    let deferredPrompt;
+    window.addEventListener('beforeinstallprompt', e => {
+        e.preventDefault(); deferredPrompt = e;
+        const btn = document.createElement('button');
+        btn.innerHTML = '<i class="fas fa-download"></i> تثبيت';
+        btn.className = 'btn btn-success';
+        btn.style.cssText = 'padding:8px 16px;font-size:14px;border-radius:8px;background:linear-gradient(135deg,#10b981,#059669);color:white;border:none;cursor:pointer;margin-right:10px;';
+        btn.onclick = () => {btn.style.display='none';deferredPrompt.prompt();deferredPrompt.userChoice.then(c=>{if(c.outcome==='accepted')console.log('✅ مثبت')});deferredPrompt=null;};
+        setTimeout(()=>{const topBar=document.querySelector('.top-bar > div:last-child');if(topBar)topBar.insertBefore(btn,topBar.firstChild);},1500);
+    });
+    </script>
     <div id="toast" class="toast-notification"></div>
 </body>
 

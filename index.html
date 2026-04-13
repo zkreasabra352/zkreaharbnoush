@@ -9,13 +9,25 @@
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
-    <!-- Firebase SDK -->
+    <!-- Firebase SDK (الترتيب مهم) -->
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+
+    <!-- PWA -->
+    <link rel="manifest" href="./manifest.json">
+    <meta name="theme-color" content="#4f46e5">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('./sw.js');
+        }
+    </script>
 
     <style>
-        /* إضافة هذا الكود لإخفاء المحتوى حتى يتم التحقق من الدخول */
+        /* إخفاء المحتوى حتى يتم التحقق من تسجيل الدخول */
         body {
             display: none;
         }
@@ -218,7 +230,7 @@
                 // المستخدم غير مسجل، نوجهه لصفحة تسجيل الدخول
                 loadingScreen.innerHTML = '<div style="text-align: center;"><i class="fas fa-lock fa-3x"></i><p style="margin-top: 15px;">يجب تسجيل الدخول للمتابعة</p></div>';
                 setTimeout(() => {
-                    window.location.href = 'login.html';
+                    window.location.href = './login.html';
                 }, 1000);
             }
         });
@@ -226,7 +238,7 @@
         // دالة تسجيل الخروج
         function logout() {
             auth.signOut().then(() => {
-                window.location.href = 'login.html';
+window.location.href = './login.html';
             }).catch((error) => {
                 console.error("Error signing out:", error);
             });
@@ -235,6 +247,55 @@
 
     <!-- استدعاء ملف سكربت النظام -->
     <script src="script.js"></script>
+    <script>
+    // PWA Install Prompt
+    let deferredPrompt;
+    let installButton = null;
+    
+    window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredPrompt = e;
+        
+        // ✅ إنشاء الزر مرة واحدة فقط
+        if (installButton) return;
+        
+        installButton = document.createElement('button');
+        installButton.id = 'installPWA';
+        installButton.innerHTML = '<i class="fas fa-download"></i> تثبيت';
+        installButton.className = 'btn btn-success';
+        installButton.style.cssText = `
+            padding: 8px 16px; font-size: 14px; border-radius: 8px;
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white; border: none; cursor: pointer; margin-left: 10px;
+        `;
+        
+        installButton.onclick = async () => {
+            if (deferredPrompt) {
+                installButton.style.display = 'none';
+                deferredPrompt.prompt();
+                const { outcome } = await deferredPrompt.userChoice;
+                if (outcome === 'accepted') {
+                    console.log('✅ تم تثبيت التطبيق');
+                }
+                deferredPrompt = null;
+            }
+        };
+        
+        // ✅ إضافة الزر في header
+        setTimeout(() => {
+            const topBar = document.querySelector('.top-bar > div:last-child');
+            if (topBar && !document.getElementById('installPWA')) {
+                topBar.insertBefore(installButton, topBar.firstChild);
+            }
+        }, 500);
+    });
+    
+    // ✅ إخفاء الزر بعد التثبيت
+    window.addEventListener('appinstalled', () => {
+        console.log('✅ PWA مثبت');
+        installButton?.remove();
+    });
+    </script>
     <div id="toast" class="toast-notification"></div>
 </body>
 

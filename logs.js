@@ -35,52 +35,238 @@ function formatLogDetails(details) {
     return html;
 }
 
+// ... الكود السابق كما هو ...
+
 async function loadLogs() {
     const table = document.getElementById('logsTable');
     if (!table) return;
 
     db.collection('logs')
-.orderBy('timestamp', 'desc')
-.limit(100)        .onSnapshot(snapshot => {
+    .orderBy('timestamp', 'desc')
+    .limit(100)
+    .onSnapshot(snapshot => {
+        table.innerHTML = '';
 
-            table.innerHTML = '';
+        snapshot.forEach(doc => {
+            const log = doc.data();
+            
+            // اسم الزبون المؤقت من السجل مباشرة
+            let customerName = log.customerName || 'جاري التحميل...';
 
-            snapshot.forEach(doc => {
+            const row = `
+            <tr data-customer-id="${log.customerId || ''}">
+                <td>${log.timestamp ? new Date(log.timestamp).toLocaleString('ar-EG') : ''}</td>
+                <td>${log.action || ''}</td>
+                <td>${log.userEmail || currentUserEmail}</td>
+                <td id="customer-${doc.id}">${customerName}</td>
+                <td>${formatLogDetails(log.details)}</td>
+            </tr>
+            `;
 
-                const log = doc.data();
+            table.insertAdjacentHTML('beforeend', row);
 
-                // ✅ الاسم السريع من السجل
-                let customerName = log.customerName || "-";
-
-                const row = `
-                <tr data-action="${log.action || ''}">
-                    <td>${log.timestamp ? new Date(log.timestamp).toLocaleString('ar-EG') : ''}</td>
-                    <td>${log.action || ''}</td>
-                    <td>${log.userEmail || 'غير معروف'}</td>
-                    <td id="user-${doc.id}">${customerName}</td>
-                    <td>${formatLogDetails(log.details)}</td>
-                </tr>
-                `;
-
-                table.insertAdjacentHTML('beforeend', row);
-
-                // ✅ fallback للسجلات القديمة فقط (بدون إبطاء)
-                if (!log.customerName && log.userId) {
-                    db.collection('users').doc(log.userId).get()
-                        .then(userDoc => {
-                            if (userDoc.exists) {
-                                const userData = userDoc.data();
-                                const name = userData.nameAr || userData.nameEn || "-";
-
-                                const cell = document.getElementById(`user-${doc.id}`);
-                                if (cell) cell.innerText = name;
-                            }
-                        })
-                        .catch(err => {
-                            console.error("خطأ في جلب الاسم:", err);
-                        });
-                }
-
-            });
+            // البحث التلقائي عن الاسم الحقيقي
+            findCustomerName(doc.id, log);
         });
+    });
+}
+
+
+
+
+
+// ✅ البحث الشامل عن اسم الزبون
+function findCustomerName(logId, log) {
+
+    // ✅ 1. إذا الاسم موجود جاهز
+    const directName = getCustomerName(log);
+    if (directName) {
+        updateCustomerCell(logId, directName);
+        return;
+    }
+
+    // ✅ 2. البحث باستخدام userId
+    if (log.customerId) {
+    db.collection('customers').doc(log.customerId).get()
+    .then(doc => {
+        if (doc.exists) {
+            const customer = doc.data();
+            const name = customer.name || customer.nameEn || 'غير معروف';
+            updateCustomerCell(logId, name);
+        } else {
+            updateCustomerCell(logId, 'غير معروف');
+        }
+    })
+    .catch(() => {
+        updateCustomerCell(logId, 'غير معروف');
+    });
+}
+}
+
+// ✅ البحث في قاعدة الزبائن حسب ID
+function searchCustomerById(logId, customerId) {
+    db.collection('customers')
+    .doc(customerId)
+    .get()
+    .then(doc => {
+        if (doc.exists) {
+            const customer = doc.data();
+            const name = customer.nameEn || customer.name || customer.customerNameEn || customer.customerName || 'غير معروف';
+            updateCustomerCell(logId, name);
+        } else {
+            // جرب في users أيضاً
+            db.collection('users').doc(customerId).get()
+            .then(userDoc => {
+                if (userDoc.exists) {
+                    const name = userDoc.data().nameEn || userDoc.data().name || 'غير معروف';
+                    updateCustomerCell(logId, name);
+                } else {
+                    updateCustomerCell(logId, 'غير معروف');
+                }
+            });
+        }
+    })
+    .catch(() => updateCustomerCell(logId, 'غير معروف'));
+}
+function fallbackToEmail(logId, log) {
+    if (log.userEmail) {
+        db.collection('customers')
+        .where('email', '==', log.userEmail)
+        .limit(1)
+        .get()
+        .then(snapshot => {
+            if (!snapshot.empty) {
+                const customer = snapshot.docs[0].data();
+                const name = customer.name || customer.nameEn || extractNameFromEmail(log.userEmail);
+                updateCustomerCell(logId, name);
+            } else {
+                updateCustomerCell(logId, extractNameFromEmail(log.userEmail));
+            }
+        })
+        .catch(() => {
+            updateCustomerCell(logId, extractNameFromEmail(log.userEmail));
+        });
+    } else {
+        updateCustomerCell(logId, 'غير معروف');
+    }
+}
+function updateCustomerCell(logId, name) {
+    const cell = document.getElementById(`customer-${logId}`);
+    if (cell) {
+        cell.textContent = name;
+    }}
+
+// ✅ استخراج اسم من البريد الإلكتروني
+function extractNameFromEmail(email) {
+    if (!email) return '';
+    return email.split('@')[0].replace(/[^a-zA-Z\s]/g, ' ').trim() || 'مستخدم';
+}
+
+// ✅ البحث عن المستخدم حسب البريد الإلكتروني
+function findUserByEmail(logId, email) {
+    db.collection('users')
+    .where('email', '==', email)
+    .limit(1)
+    .get()
+    .then(snapshot => {
+        if (!snapshot.empty) {
+            const userDoc = snapshot.docs[0];
+            const userData = userDoc.data();
+            const fullName = userData.nameEn || userData.name || userData.fullName || extractNameFromEmail(email);
+            
+            const cell = document.getElementById(`user-${logId}`);
+            if (cell) {
+                cell.textContent = fullName;
+                console.log(`✅ تم العثور على: ${fullName} للبريد: ${email}`);
+            }
+        }
+    })
+    .catch(err => {
+        console.error('خطأ في البحث عن المستخدم:', err);
+    });
+}
+
+// ✅ استخراج اسم الزبون من السجل مباشرة
+function getCustomerNameFromLog(log) {
+    const fields = [
+        'customerNameEn', 'nameEn', 'customer_name_en', 'fullNameEn',
+        'customerName', 'nameAr', 'customer_name', 'name', 'fullName'
+    ];
+    
+    for (const field of fields) {
+        if (log[field]) {
+            console.log(`تم العثور على الاسم في: ${field} = ${log[field]}`);
+            return log[field];
+        }
+    }
+    return null;
+}
+
+// ✅ جلب اسم الزبون من قاعدة البيانات
+function loadCustomerName(logId, customerId) {
+    if (!customerId) return;
+
+    // ✅ البحث في مجموعة الزبائن
+    db.collection('customers')
+    .doc(customerId)
+    .get()
+    .then(customerDoc => {
+        if (customerDoc.exists) {
+            const customer = customerDoc.data();
+            const name = customer.nameEn || customer.name || customer.customerNameEn || customer.customerName || 'غير معروف';
+            
+            const cell = document.getElementById(`name-${logId}`);
+            if (cell) {
+                cell.innerText = name;
+                console.log(`تم تحديث اسم الزبون: ${name}`);
+            }
+        } else {
+            // ✅ إذا لم توجد في customers، جرب users
+            db.collection('users').doc(customerId).get()
+            .then(userDoc => {
+                if (userDoc.exists) {
+                    const userData = userDoc.data();
+                    const name = userData.nameEn || userData.name || 'غير معروف';
+                    
+                    const cell = document.getElementById(`name-${logId}`);
+                    if (cell) cell.innerText = name;
+                }
+            });
+        }
+    })
+    .catch(err => {
+        console.error("خطأ في جلب اسم الزبون:", err);
+    });
+}
+
+// ✅ دالة مساعدة للبحث عن اسم الزبون
+function getCustomerName(log) {
+    const nameFields = [
+        'customerNameEn', 'nameEn', 'customer_name_en', 'fullNameEn',
+        'customerName', 'name', 'customer_name', 'fullName'
+    ];
+    
+    for (const field of nameFields) {
+        if (log[field]) {
+            return log[field];
+        }
+    }
+    return null;
+}
+
+// ✅ تحسين البحث عن اسم المستخدم
+function searchUserName(docId, userId) {
+    if (!userId) return;
+    
+    db.collection('users').doc(userId).get()
+        .then(userDoc => {
+            if (userDoc.exists) {
+                const userData = userDoc.data();
+                const name = userData.nameEn || userData.name || userData.fullName || "-";
+                
+                const cell = document.getElementById(`user-${docId}`);
+                if (cell) cell.innerText = name;
+            }
+        })
+        .catch(err => console.error("خطأ في جلب الاسم:", err));
 }

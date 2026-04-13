@@ -325,46 +325,47 @@ function editCustomer(userId) { openCustomerModal(userId); }
 function deleteCustomer(userId) {
     if (!userId) return;
 
-    // 🔥 أولاً نجيب اسم الزبون
-    db.collection('users').doc(userId).get()
-        .then(userDoc => {
-            const userData = userDoc.data();
-            const customerName = userData?.nameAr || userData?.nameEn || "غير معروف";
+    // جلب اسم الزبون أولاً
+    db.collection('users').doc(userId).get().then(userDoc => {
+        const userData = userDoc.data();
+        const customerName = userData?.nameAr || userData?.nameEn || "غير معروف";
 
-            const batch = db.batch();
+        const batch = db.batch();
 
-            // 1️⃣ حذف جميع دفعات الزبون
-            db.collection('users').doc(userId).collection('payments').get()
-                .then(paymentsSnap => {
-                    paymentsSnap.forEach(doc => batch.delete(doc.ref));
+        // 1️⃣ حذف جميع دفعات الزبون
+        db.collection('users').doc(userId).collection('payments').get()
+            .then(paymentsSnap => {
+                paymentsSnap.forEach(doc => batch.delete(doc.ref));
 
-                    // 2️⃣ حذف كل الديون المرتبطة بالزبون من مجموعة debts
-                    return db.collection('debts').where('customerId', '==', userId).get();
-                })
-                .then(debtsSnap => {
-                    debtsSnap.forEach(doc => batch.delete(doc.ref));
+                // 2️⃣ حذف كل الديون
+                return db.collection('debts').where('customerId', '==', userId).get();
+            })
+            .then(debtsSnap => {
+                debtsSnap.forEach(doc => batch.delete(doc.ref));
 
-                    // 3️⃣ حذف الزبون نفسه
-                    const userRef = db.collection('users').doc(userId);
-                    batch.delete(userRef);
+                // 3️⃣ حذف الزبون
+                batch.delete(db.collection('users').doc(userId));
 
-                    // تنفيذ كل الحذف دفعة واحدة
-                    return batch.commit();
-                })
-                .then(() => {
-                    // 4️⃣ سجل العملية
-                    db.collection('logs').add({
-                        action: 'deleteCustomer',
-                        userEmail: auth.currentUser?.email || 'غير معروف',
-                        userId,
-                        customerName: customerName,
-                        timestamp: new Date().toISOString()
-                    });
+                // تنفيذ الحذف
+                return batch.commit();
+            })
+            .then(() => {
+                // 4️⃣ حفظ السجل
+                db.collection('logs').add({
+                    action: 'deleteCustomer',
+                    userEmail: auth.currentUser?.email || 'غير معروف',
+                    customerId: userId,
+                    customerName: customerName,
+                    timestamp: new Date().toISOString()
+                });
 
-                    showToast("تم حذف الزبون وجميع الدفعات والديون بنجاح");
-                })
-                .catch(err => console.error("خطأ عند حذف الزبون:", err));
-        });
+                showToast("✅ تم حذف الزبون وجميع بياناته بنجاح");
+            })
+            .catch(err => {
+                console.error("خطأ في الحذف:", err);
+                showToast("خطأ في الحذف", "error");
+            });
+    });
 }
 
 function goToPayments(userId) {
@@ -483,37 +484,74 @@ if (savePaymentBtn) savePaymentBtn.addEventListener('click', () => {
 
     if (!amount) return alert("المبلغ مطلوب");
 
-    // حفظ النص كما هو بدون أي حسابات
     const data = { amount, remaining, speed, note, paymentDate };
 
     if (editingPaymentId) {
+        // تعديل دفعة موجودة
         db.collection('users').doc(userId).collection('payments').doc(editingPaymentId).update(data)
             .then(() => {
                 showToast("تم تعديل الدفعة");
 
-                db.collection('logs').add({
-    action: 'editPayment',
-    userEmail: auth.currentUser.email || 'غير معروف',
-    userId,
-    customerName: localStorage.getItem('customerName') || "غير معروف",
-    paymentId: editingPaymentId,
-    details: data,
-    timestamp: new Date().toISOString()
-});
+                // جلب اسم الزبون للسجل
+                return db.collection('users').doc(userId).get();
+            })
+            .then(userDoc => {
+                const customerData = userDoc.data();
+                const customerName = customerData.nameAr || customerData.nameEn || "غير معروف";
+                
+                return db.collection('logs').add({
+                    action: 'editPayment',
+                    userEmail: auth.currentUser?.email || 'غير معروف',
+                    customerId: userId,
+                    customerName: customerName,
+                    paymentId: editingPaymentId,
+                    details: data,
+                    timestamp: new Date().toISOString()
+                });
+            })
+            .then(() => {
+                showToast("✅ تم تعديل الدفعة والسجل بنجاح");
+            })
+            .catch(err => {
+                console.error("خطأ:", err);
+                showToast("تم تعديل الدفعة لكن خطأ في السجل", "warning");
             });
     } else {
+        // إضافة دفعة جديدة
         db.collection('users').doc(userId).collection('payments').add(data)
-            .then(docRef => {
+            .then((docRef) => {
                 showToast("تم إضافة دفعة بنجاح");
-                db.collection('logs').add({
-    action: 'addPayment',
-    userEmail: auth.currentUser.email || 'غير معروف',
-    userId,
-    customerName: localStorage.getItem('customerName') || "غير معروف", // 🔥
-    paymentId: docRef.id,
-    details: data,
-    timestamp: new Date().toISOString()
-});
+                
+                // جلب اسم الزبون
+                return db.collection('users').doc(userId).get();
+            })
+            .then((userDoc) => {
+                const customerData = userDoc.data();
+                const customerName = customerData.nameAr || customerData.nameEn || "غير معروف";
+                
+                // حفظ السجل مع paymentId
+                return db.collection('logs').add({
+                    action: 'addPayment',
+                    userEmail: auth.currentUser?.email || 'غير معروف',
+                    customerId: userId,
+                    customerName: customerName,
+                    paymentId: editingPaymentId || 'جديد', // ✅ آمن
+                    timestamp: new Date().toISOString(),
+                    details: {
+                        paymentDate,
+                        speed,
+                        amount,
+                        remaining,
+                        note
+                    }
+                });
+            })
+            .then(() => {
+                showToast("✅ تم حفظ الدفعة والسجل بنجاح");
+            })
+            .catch(err => {
+                console.error("خطأ في حفظ الدفعة أو السجل:", err);
+                showToast("تم حفظ الدفعة لكن خطأ في السجل", "warning");
             });
     }
 
@@ -718,27 +756,43 @@ function deleteSelectedPayments() {
 
     if (!confirm(`هل تريد حذف ${selected.length} دفعة؟`)) return;
 
-    selected.forEach(cb => {
-        db.collection('users')
-            .doc(userId)
-            .collection('payments')
-            .doc(cb.value)
-            .delete()
-            .then(() => {
-                showToast("تم حذف الدفعة");
+    // جلب اسم الزبون مرة واحدة
+    db.collection('users').doc(userId).get().then(userDoc => {
+        const customerData = userDoc.data();
+        const customerName = customerData.nameAr || customerData.nameEn || "غير معروف";
 
-                db.collection('logs').add({
-    action: 'deletePayment',
-    userEmail: auth.currentUser.email || 'غير معروف',
-    userId,
-    customerName: localStorage.getItem('customerName') || "غير معروف",
-    paymentId: cb.value,
-    timestamp: new Date().toISOString()
-});
-            });
+        let deletedCount = 0;
+        selected.forEach(cb => {
+            db.collection('users')
+                .doc(userId)
+                .collection('payments')
+                .doc(cb.value)
+                .delete()
+                .then(() => {
+                    deletedCount++;
+                    
+                    // حفظ سجل لكل دفعة
+                    db.collection('logs').add({
+                        action: 'deletePayment',
+                        userEmail: auth.currentUser?.email || 'غير معروف',
+                        customerId: userId,
+                        customerName: customerName,
+                        paymentId: cb.value,
+                        timestamp: new Date().toISOString()
+                    });
+
+                    if (deletedCount === selected.length) {
+                        showToast(`تم حذف ${deletedCount} دفعة بنجاح`);
+                        clearPaymentsSelection();
+                    }
+                })
+                .catch(err => {
+                    console.error("خطأ في حذف دفعة:", err);
+                });
+        });
+    }).catch(err => {
+        console.error("خطأ في جلب اسم الزبون:", err);
     });
-
-    clearPaymentsSelection();
 }
 function toggleSelectAllPayments() {
     const mainCb = document.getElementById('selectAllPayments');
@@ -818,11 +872,35 @@ function deletePayment(paymentId) {
     if (!userId) return;
     if (!confirm("هل تريد حذف هذه الدفعة؟")) return;
 
-    db.collection('users').doc(userId).collection('payments').doc(paymentId).delete()
-        .catch(err => console.error("خطأ عند حذف الدفعة:", err));
+    // جلب اسم الزبون أولاً
+    db.collection('users').doc(userId).get().then(userDoc => {
+        const customerData = userDoc.data();
+        const customerName = customerData.nameAr || customerData.nameEn || "غير معروف";
+
+        // حذف الدفعة
+        db.collection('users').doc(userId).collection('payments').doc(paymentId).delete()
+            .then(() => {
+                showToast("تم حذف الدفعة بنجاح");
+
+                // حفظ السجل
+                db.collection('logs').add({
+                    action: 'deletePayment',
+                    userEmail: auth.currentUser?.email || 'غير معروف',
+                    customerId: userId,
+                    customerName: customerName,
+                    paymentId: paymentId,
+                    timestamp: new Date().toISOString()
+                });
+            })
+            .catch(err => {
+                console.error("خطأ في حذف الدفعة:", err);
+                showToast("خطأ في الحذف", "error");
+            });
+    }).catch(err => {
+        console.error("خطأ في جلب اسم الزبون:", err);
+    });
 }
 
-// ================== تشغيل التحميل التلقائي ==================
 // ================== تشغيل التحميل التلقائي ==================
 
 // 🔥 هنا تضع الكود
