@@ -472,6 +472,7 @@ const addPaymentBtn = document.getElementById('addPaymentBtn');
 if (addPaymentBtn) addPaymentBtn.addEventListener('click', () => openPaymentModal());
 
 const savePaymentBtn = document.getElementById('savePaymentBtn');
+
 if (savePaymentBtn) savePaymentBtn.addEventListener('click', () => {
     const userId = localStorage.getItem('currentUserId');
     if (!userId) return;
@@ -484,78 +485,81 @@ if (savePaymentBtn) savePaymentBtn.addEventListener('click', () => {
 
     if (!amount) return alert("المبلغ مطلوب");
 
-    const data = { amount, remaining, speed, note, paymentDate };
+    // 🔥 جلب اسم الزبون أولاً
+    db.collection('users').doc(userId).get().then(userDoc => {
+        const customerData = userDoc.data();
 
-    if (editingPaymentId) {
-        // تعديل دفعة موجودة
-        db.collection('users').doc(userId).collection('payments').doc(editingPaymentId).update(data)
-            .then(() => {
-                showToast("تم تعديل الدفعة");
+        const data = {
+            amount,
+            remaining,
+            speed,
+            note,
+            paymentDate,
+            customerNameAr: customerData.nameAr || '',
+            customerNameEn: customerData.nameEn || ''
+        };
 
-                // جلب اسم الزبون للسجل
-                return db.collection('users').doc(userId).get();
-            })
-            .then(userDoc => {
-                const customerData = userDoc.data();
-                const customerName = customerData.nameAr || customerData.nameEn || "غير معروف";
-                
-                return db.collection('logs').add({
-                    action: 'editPayment',
-                    userEmail: auth.currentUser?.email || 'غير معروف',
-                    customerId: userId,
-                    customerName: customerName,
-                    paymentId: editingPaymentId,
-                    details: data,
-                    timestamp: new Date().toISOString()
+        if (editingPaymentId) {
+            // ✅ تعديل دفعة
+            db.collection('users')
+                .doc(userId)
+                .collection('payments')
+                .doc(editingPaymentId)
+                .update(data)
+                .then(() => {
+                    showToast("تم تعديل الدفعة");
+
+                    return db.collection('logs').add({
+                        action: 'editPayment',
+                        userEmail: auth.currentUser?.email || 'غير معروف',
+                        customerId: userId,
+                        customerName: data.customerNameAr,
+                        paymentId: editingPaymentId,
+                        details: data,
+                        timestamp: new Date().toISOString()
+                    });
+                })
+                .then(() => {
+                    showToast("✅ تم تعديل الدفعة والسجل بنجاح");
+                })
+                .catch(err => {
+                    console.error("خطأ:", err);
+                    showToast("خطأ في التعديل", "error");
                 });
-            })
-            .then(() => {
-                showToast("✅ تم تعديل الدفعة والسجل بنجاح");
-            })
-            .catch(err => {
-                console.error("خطأ:", err);
-                showToast("تم تعديل الدفعة لكن خطأ في السجل", "warning");
-            });
-    } else {
-        // إضافة دفعة جديدة
-        db.collection('users').doc(userId).collection('payments').add(data)
-            .then((docRef) => {
-                showToast("تم إضافة دفعة بنجاح");
-                
-                // جلب اسم الزبون
-                return db.collection('users').doc(userId).get();
-            })
-            .then((userDoc) => {
-                const customerData = userDoc.data();
-                const customerName = customerData.nameAr || customerData.nameEn || "غير معروف";
-                
-                // حفظ السجل مع paymentId
-                return db.collection('logs').add({
-                    action: 'addPayment',
-                    userEmail: auth.currentUser?.email || 'غير معروف',
-                    customerId: userId,
-                    customerName: customerName,
-                    paymentId: editingPaymentId || 'جديد', // ✅ آمن
-                    timestamp: new Date().toISOString(),
-                    details: {
-                        paymentDate,
-                        speed,
-                        amount,
-                        remaining,
-                        note
-                    }
-                });
-            })
-            .then(() => {
-                showToast("✅ تم حفظ الدفعة والسجل بنجاح");
-            })
-            .catch(err => {
-                console.error("خطأ في حفظ الدفعة أو السجل:", err);
-                showToast("تم حفظ الدفعة لكن خطأ في السجل", "warning");
-            });
-    }
 
-    closePaymentModal();
+        } else {
+            // ✅ إضافة دفعة جديدة
+            db.collection('users')
+                .doc(userId)
+                .collection('payments')
+                .add(data)
+                .then((docRef) => {
+                    showToast("تم إضافة دفعة بنجاح");
+
+                    return db.collection('logs').add({
+                        action: 'addPayment',
+                        userEmail: auth.currentUser?.email || 'غير معروف',
+                        customerId: userId,
+                        customerName: data.customerNameAr,
+                        paymentId: docRef.id,
+                        timestamp: new Date().toISOString(),
+                        details: data
+                    });
+                })
+                .then(() => {
+                    showToast("✅ تم حفظ الدفعة والسجل بنجاح");
+                })
+                .catch(err => {
+                    console.error("خطأ:", err);
+                    showToast("خطأ في الحفظ", "error");
+                });
+        }
+
+        closePaymentModal();
+    }).catch(err => {
+        console.error("خطأ في جلب اسم الزبون:", err);
+        showToast("خطأ في جلب بيانات الزبون", "error");
+    });
 });
 function goToDebts() {
     const userId = localStorage.getItem('currentUserId');
@@ -691,7 +695,7 @@ function printCustomerInvoice() {
         <body>
             <div class="header">
                 <h1>💰 سجل الدفعات</h1>
-                <p>نظام إدارة الزبائن المتكامل</p>
+                <p>شـبـكـة حـربـنـوش الـفـضـائـيـة</p>
             </div>
             
             <div class="info-box">
@@ -733,8 +737,8 @@ function printCustomerInvoice() {
             </table>
             
             <div class="footer">
-                <p>✅ تم إنشاء هذا التقرير بواسطة <strong>نظام إدارة الزبائن</strong></p>
-                <p>شكراً لثقتكم بنا 💚</p>
+                <p>✅ تم إنشاء هذا التقرير بواسطة <strong> زكريا صبرة </strong></p>
+                <p>Harbnoush Network</p>
             </div>
         </body>
         </html>
@@ -820,7 +824,6 @@ function showToast(message, type = "success") {
         toast.classList.remove("toast-show");
     }, 3000);
 }
-// ================== دالة فلتر الدفعات حسب التاريخ ==================
 // ================== دالة فلتر الدفعات حسب التاريخ ==================
 function filterPaymentsByDate() {
     const dateFilter = document.getElementById('paymentDateFilter').value;
